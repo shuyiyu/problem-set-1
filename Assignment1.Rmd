@@ -1,0 +1,127 @@
+---
+title: "Assignment1"
+author: "Shuyi Yu"
+date: "10/27/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Question1
+
+```{r, include=FALSE}
+library(tidyverse)
+library(skimr)
+library(dendextend) 
+library(ggplot2)
+library(clValid)
+library(clustertend)
+library(factoextra)
+library(mixtools)
+library(plotGMM)
+```
+
+```{r, echo=TRUE}
+#Load the state legislative professionalism data from the folder
+(load("/Users/Shuyi/Desktop/AS1code/legprof-components.v1.0.RData"))
+```
+
+## Question2
+
+```{r, echo=TRUE}
+#Munge the data
+d1 <- subset(x, sessid=="2009/10")
+state_names <- d1[,3]
+d2 <- d1 %>% select(t_slength, slength, salary_real, expend)
+rownames(d2) <- state_names 
+d3 <- na.omit(d2)
+pf_data <- d3 %>% scale()
+```
+
+## Question3
+
+From the graph, it's easy to see there is a natural, non-random structure in the data. There are darker blocks along the diagonal, which suggest greater spatial similarity, compared to lighter shaded blocks, which suggest greater dissimilarity. 
+
+```{r, echo=TRUE, message=FALSE}
+#Diagnose clusterability using ODI
+clustend <- get_clust_tendency(pf_data, 48)
+clustend$plot + scale_fill_gradient(low="steelblue", high="white")
+```
+
+## Question4
+
+The dendrogram can be first cut into two clusters, then further into three clusters. It fits certain observable natural grouping. I can see that the rightmost cluster includes populous wealthy states like California, Massachusetts, New York, Pennsyviania, Ohio, Illinois, Michigan, etc.  
+
+```{r, echo=TRUE}
+#Fit a simple agglomerative hierarchical clustering algorithm
+matrix_distance <- pf_data %>% dist()
+pf_complete <- hclust(matrix_distance, method = "complete"); plot(pf_complete, hang = -1)
+```
+
+## Question5
+
+Let the Kmeans algorithm divide data into two clusters. The first cluster has a size of 43, with average t_slength -0.2930275 slength -0.2932285  salary -0.2833616 expend -0.2047966, representing states with shorter sessions and smaller legislative expenditure. The second cluster has a size of 6, with average t_slength 2.1000302 slength 2.1014710  salary 2.0307585 expend 1.4677087, representing states with longer sessions and larger legislative expenditure. From the cluster assignment, I can see that the second cluster has indeed populous wealthy states. 
+
+```{r, echo=TRUE}
+#Fit a k-means algorithm
+set.seed(634)
+pf_kmeans <- kmeans(pf_data[,1:4], centers = 2, nstart = 15)
+pf_kmeans$cluster
+pf_kmeans$centers
+pf_kmeans$size
+```
+
+## Question6
+
+Via $\mu$, I can see that the first population has longer sessions and larger legislative expenditure, and the second population has shorter sessions and smaller legislative expenditure. Via $\lambda$, I can see that the second population contributes a larger proportion to the whole distribution. 
+
+```{r, echo=TRUE}
+##Fit a Gaussian mixture model via the EM algorithm
+set.seed(7355) 
+pf_mgmm <- mvnormalmixEM(pf_data[,1:4], k = 2)
+pf_mgmm[2:3]
+```
+
+## Question7
+
+The dendrogram is drawn in Qustion4. I fit Gaussian mixture model on several combinations of two features. Here are two graphs of them. The left graph is on salary and expenditure, and the two distributions are not clear. I guess it's bacause salary and expenditure are too much overlapping, the two features cannot be used to cluster well. The right graph is on session length and salary, and the two distributions are very clear. Actually using session length and salaray produces the best fitting results across all combinations. 
+
+```{r, echo=TRUE}
+#Plot by state cluster assignment across two features like salary and expenditures
+par(mfrow = c(1, 2))
+set.seed(7355) 
+pf_mgmm <- mvnormalmixEM(pf_data[,3:4], k = 2)
+plot(pf_mgmm, which=2, 
+     xlim = c(min(pf_mgmm$x[,1])-2, max(pf_mgmm$x[,1])+2), 
+     ylim = c(min(pf_mgmm$x[,2])-2, max(pf_mgmm$x[,2])+2)
+)  
+
+set.seed(7355)
+pf_mgmm <- mvnormalmixEM(pf_data[,2:3], k = 2)
+plot(pf_mgmm, which=2, 
+     xlim = c(min(pf_mgmm$x[,1])-2, max(pf_mgmm$x[,1])+2), 
+     ylim = c(min(pf_mgmm$x[,2])-2, max(pf_mgmm$x[,2])+2)
+)
+```
+
+## Question8
+
+Let’s look at Silhouette, which shows that the hierarchical algorithm is the best with k=2.
+
+```{r, echo=TRUE, message=FALSE}
+#Validation
+pf_matrix <- as.matrix(pf_data[,1:4])
+internal_all <- 
+  clValid(pf_matrix, 2:10, clMethods=c("hierarchical", "kmeans", "model"), validation="internal"); summary(internal_all)
+par(mfrow = c(2, 2))
+plot(internal_all, legend = FALSE, type = "l", main = " ")
+```
+
+## Question9
+
+a. For this context, in terms of better validation statistics, hierarchical > kmeans > model.
+b. Hierarchical algorithm is the best with k=2.
+c. First, hierarchical algorithm is computationally intensive and does not scale well, so if there is huge dataset, we may need to employ less demanding method like kmeans. Second, sometimes, we do not have domain knowledge to infer a good k, thus hierarchical algorithm will be better in exploring the underlying structure of the dataset.
+
